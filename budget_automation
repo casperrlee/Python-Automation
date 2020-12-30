@@ -1,0 +1,117 @@
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+import time
+from bs4 import BeautifulSoup
+import pandas as pd
+from money_parser import price_str
+from dateutil import parser
+
+class BudgetAutomation:
+    def boa_webpage(self):
+        path = r'C:\Program Files (x86)\chromedriver.exe'
+        chrome_options = Options()
+        chrome_options.add_argument('--disable-notifications')
+        global browser
+        browser = webdriver.Chrome(path, options = chrome_options)
+
+        # BoA Information
+        browser.maximize_window()
+        browser.get('https://www.bankofamerica.com/')
+
+        time.sleep(1)
+
+        username = browser.find_element_by_name('onlineId1').send_keys('USERNAME')
+        time.sleep(2)
+        password = browser.find_element_by_name('passcode1')
+        password.send_keys('PASSWORD')
+        time.sleep(1)
+        password.send_keys(Keys.RETURN)
+
+        browser.find_element_by_link_text('Adv Plus Banking - ****').click()
+
+        global boa_checking_html
+        boa_checking_html = browser.page_source
+        time.sleep(1)
+
+        browser.back()
+
+        browser.find_element_by_link_text('Bank of America Cash Rewards World Mastercard Card - ****').click()
+
+        global boa_creditcard_html
+        boa_creditcard_html = browser.page_source
+
+    def boa_to_excel(self):
+        # Creates a dataframe for the BoA Checking Account
+        boa_checking_soup = BeautifulSoup(boa_checking_html, 'lxml')
+        boa_checking_table = boa_checking_soup.find(lambda tag: tag.name == 'table' and tag.has_attr('summary') and tag['summary'] == 'Account Activity table, made up of Date, Description, Type, Status, Dollar Amount, and Available balance columns.')
+
+        rows = boa_checking_table.find(lambda tag: tag.name == 'tbody')
+
+        containers = rows.find_all('tr', class_ = ['record transType-otherpayment cleared even','record transType-otherpayment cleared',
+                                                   'record transType-cards cleared even', 'record transType-cards cleared',
+                                                   'record transType-deposit cleared even', 'record transType-deposit cleared',
+                                                   'record transType-billpay cleared even', 'record transType-billpay cleared',
+                                                   'record transType-transfer cleared even', 'record transType-transfer cleared'])
+
+        dateli = []
+        descli = []
+        amtli = []
+
+        for container in containers:
+            date = container.find('td', class_ = 'date-action').get_text()
+            date = parser.parse(date.strip()[6:]).date()
+            dateli.append(date)
+
+            desc_container1 = container.find('td', class_ = 'description TL_NPI_TransDesc')
+            desc_container2 = desc_container1.find('a', class_ = 'transactionTitle')
+            description = desc_container2.find('span', class_ = 'transTitleForEditDesc').get_text()
+            descli.append(description)
+
+            amount = container.find('td', class_ = ['amount positive TL_NPI_Amt', 'amount TL_NPI_Amt isDebit']).get_text()
+            amtli.append(float(price_str(amount)))
+
+        boa_checking_df = pd.DataFrame(data = {'Date': dateli, 'Description': descli, 'Amount': amtli, 'Source': ['BoA Checking']*len(dateli)})
+        boa_checking_df['Amount'] = ['${:,.2f}'.format(x) if x >= 0 else '$({:,.2f})'.format(abs(x)) for x in boa_checking_df['Amount']]
+
+        # Creates a dataframe for the BoA Credit Card Account
+        if browser.find_element_by_class_name('no-trans-to-display'):
+            boa_creditcard_df = pd.DataFrame(columns = ['Date', 'Description', 'Amount'])
+        else:
+            boa_creditcard_soup = BeautifulSoup(boa_creditcard_html, 'lxml')
+            boa_creditcard_table = boa_creditcard_soup.find(lambda tag: tag.name == 'table' and tag.has_attr('summary') and tag['summary'] == 'A table displaying transactions that lets you expand each transaction for specific transaction details')
+
+            rows1 = boa_checking_table.find(lambda tag: tag.name == 'tbody')
+
+            containers1 = rows.find_all('tr', class_ = ['trans-first-row odd', 'trans-first-row even', 'odd', 'even'])
+
+            dateli1 = []
+            descli1 = []
+            amtli1 = []
+
+            for container in containers1:
+                date1 = container.find('td', headers = 'transaction-date').get_text(strip=True)
+                dateli1.append(date1)
+
+                description1 = container.find('td', headers = 'transaction-description').get_text(strip=True)
+                descli1.append(description1[51:])
+
+                amount1 = container.find('td', headers = ['transaction-amount']).get_text(strip=True)
+                amtli1.append(float(price_str(amount1)))
+
+            boa_creditcard_df = pd.DataFrame(data = {'Date': dateli1, 'Description': descli1, 'Amount': amtli1, 'Source': ['BoA Credit Card']*len(dateli1)})
+            boa_creditcard_df['Amount'] = ['${:,.2f}'.format(x) if x >= 0 else '$({:,.2f})'.format(abs(x)) for x in boa_creditcard_df['Amount']]
+
+        writer = pd.ExcelWriter(r'C:\Users\Casper Lee\Desktop\budget2.xlsx', engine = 'xlsxwriter')
+        boa_checking_df.to_excel(writer, sheet_name = 'BoA_Checking', index = False)
+        boa_creditcard_df.to_excel(writer, sheet_name = 'BoA_Credit', index = False)
+
+        writer.save()
+        browser.quit()
+        
+    def main(self):
+        self.boa_webpage()
+        self.boa_to_excel()
+
+run = BudgetAutomation()
+run.main()
