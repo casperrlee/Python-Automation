@@ -7,6 +7,8 @@ import pandas as pd
 from money_parser import price_str
 from dateutil import parser
 
+# This script will login to your BoA account (ex. Checking and Credit Card), scrape the transaction data, pull it into a dataframe, and send it to an excel file
+
 class BudgetAutomation:
     def boa_webpage(self):
         path = r'C:\Program Files (x86)\chromedriver.exe'
