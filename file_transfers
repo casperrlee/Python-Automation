@@ -1,0 +1,68 @@
+# Moves previous files with date from last week to Archived folder and creates new files in correct file destination from downloaded reports
+
+import pandas as pd
+import numpy as np
+import openpyxl as xl
+from datetime import date
+from datetime import timedelta
+import glob
+import os
+
+class FileTransfer:
+    def rename_files(self):
+        today = date.today() - timedelta(days = 1)
+        offset = (today.weekday() - 2) % 7
+        last_wed = today - timedelta(days=offset)
+        print(last_wed)
+
+        start_one_file = r'START_FILENAME.xlsx'
+        end_one_file = r'END_FILENAME '+str(last_wed)+'.xlsx'
+
+        os.rename(start_one_file, end_one_file)
+
+        start_two_file = r'START2_FILENAME.xlsx'
+        end_two_file = r'END2_FILENAME ' +str(last_wed)+'.xlsx'
+
+        os.rename(start_two_file, end_two_file)
+
+    def create_product1_file(self):
+        # Gets the latest downloaded Weekly File
+        product1_list_of_files = glob.glob(r'PRODUCT1_FILE_*.xlsx')
+        filename = max(product1_list_of_files, key = os.path.getctime)
+        print(filename)
+
+        # Creates downloaded file into dataframe
+        dataframe1 = pd.read_excel(filename, sheet_name = 0, header = 0, index_col = False, keep_default_na = True)
+
+        f_name = r'F_PATH.xlsx'
+
+        # Copies/saves it into excel file above
+        writer = pd.ExcelWriter(f_name, engine = 'xlsxwriter')
+        dataframe1.to_excel(writer, sheet_name = 'Sheet1', startrow = 1, header = True, index = False)
+
+        writer.save()
+
+    def create_product2_file(self):
+        # Gets the latest NPD SSD Weekly File
+        product2_list_of_files = glob.glob(r'PRODUCT2_FILE_*.xlsx')
+        originalfile = max(product2_list_of_files, key = os.path.getctime)
+        print(originalfile)
+
+        # Creates downloaded file into dataframe
+        df1 = pd.read_excel(originalfile, sheet_name = 0, header = 0, index_col = False, keep_default_na = True)
+
+        changedfile = r'F_PATH2.xlsx'
+
+        # Copies/saves it into excel file above
+        writer1 = pd.ExcelWriter(changedfile, engine = 'xlsxwriter')
+        df1.to_excel(writer1, sheet_name = 'First draft', startrow = 1, header = True, index = False)
+
+        writer1.save()
+
+    def main(self):
+        self.rename_files()
+        self.create_product1_file()
+        self.create_product2_file()
+
+run = FileTransfer()
+run.main()
