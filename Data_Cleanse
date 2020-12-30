@@ -1,0 +1,125 @@
+# Gets necessary information for the business from title of given third-party data using RegEx and Cross-Reference File
+
+import pandas as pd
+import re
+import numpy as np
+import os
+
+print('What is the number of the month (ex. Jan = 01)')
+month = input()
+
+path1 = 'C:'
+path2 = r'FILEPATH'
+path3 = 'Dataset '+ month + '-2020.xlsx'
+
+filename = os.path.join(path1, path2, month, path3)
+
+df = pd.read_excel(filename, sheet_name='Sheet1', header=0, index_col=None)
+
+df['Titulo_Publicacion'] = df['Titulo_Publicacion'].str.upper()
+
+titles = df['Titulo_Publicacion'].tolist()
+
+df['Mes'] = pd.to_datetime(df['Mes'] ,errors = 'coerce',format = '%Y-%m-%d').dt.strftime("%Y-%m")
+
+# Getting Capacity
+
+capacity_list = []
+for title in titles:
+    try:
+        capacity = re.compile(r'\d+(\.\d+)?\s?TB|(\d+(\.\d+)?\s?GB(?!.*\d+(\.\d+)?\s?TB))|(\d+(\.\d+)?\s?G)')
+        finder = capacity.search(title)
+        listing = finder.group()
+        capacity_list.append(listing)
+    except:
+        capacity = None
+        capacity_list.append('-')
+
+new_capacity_list = []
+for x in capacity_list:
+    new_capacity = x.replace(' ','')
+    if x[-1] == 'G':
+        new_capacity = x.replace('G', 'GB')
+    if x[0] == '0':
+        new_capacity = x.replace('0','')
+    new_capacity_list.append(new_capacity)
+
+df['Capacity'] = np.array(new_capacity_list)
+
+print('Got Capacity...')
+
+# Getting Product Category
+
+df['Product_Category'] = '-'
+df['Product_Category'] = df['Product_Category'].apply(str)
+
+prod_cat_hdd = re.compile(r'\b(DURO|RIGIDO|RÃ­GIDO|RIGIDOS|HDD)\b')
+prod_cat_ssd = re.compile(r'\b(DURO SOLIDO|SOLIDO|SSD|SÃ³LIDO)\b')
+prod_cat_external_ssd = re.compile(r'\b(EXTERNO|EXTREME)\b.*\b(SOLIDO|SSD|SÃ³LIDO)\b|\b(SOLIDO|SSD|SÃ³LIDO)\b.*\b(EXTERNO|EXTREME)\b')
+prod_cat_external_hdd = re.compile(r'\b(EXTERNO|EXTREME)\b.*\b(DURO|RIGIDO|RIGIDOS|RÃ­GIDO|HDD)\b|\b(DURO|RIGIDO|RIGIDOS|RÃ­GIDO|HDD)\b.*\b(EXTERNO|EXTREME)\b')
+df['Product_Category'] = df.apply(lambda row: 'HDD' if prod_cat_hdd.search(str(row.Titulo_Publicacion)) else str(row.Product_Category), axis=1)
+df['Product_Category'] = df.apply(lambda row: 'SSD' if prod_cat_ssd.search(str(row.Titulo_Publicacion)) else str(row.Product_Category), axis=1)
+df['Product_Category'] = df.apply(lambda row: 'External SSD' if prod_cat_external_ssd.search(str(row.Titulo_Publicacion)) else str(row.Product_Category), axis=1)
+df['Product_Category'] = df.apply(lambda row: 'External HDD' if prod_cat_external_hdd.search(str(row.Titulo_Publicacion)) else str(row.Product_Category), axis=1)
+
+print('Got Product Category...')
+
+# Getting Model
+
+competitor_items = ['Competitor Brand 1', 'Competitor Brand 2', 'Competitor Brand 3', 'Competitor Brand 4', 'Competitor Brand 5', 'Competitor Brand 6', ETC.]
+
+model_list = []
+for title in titles:
+    try:
+        result = re.search('|'.join(competitor_items),title).group(0)
+        model_list.append(result)
+    except:
+        model = None
+        model_list.append('-')
+
+df['Model'] = np.array(model_list)
+
+print('Got Model...')
+
+# Getting Interface
+
+df2 = pd.read_excel(r'CROSS_REFERENCE_FILE.xlsx')
+
+df = pd.merge(df, df2, on = 'Model', how = 'left')
+df['Form_Factor'] = df['Form_Factor'].fillna('-')
+
+interface_sata = re.compile(r'\bSATA\b|\b2\.5\b')
+interface_sata2 = re.compile(r'\b3\.5\b')
+interface_m2 = re.compile(r'\bM\.2\b|\bM2\b')
+interface_nvme = re.compile(r'\b(M2|M\.2)\b.*\b(NVME)\b|\b(NVME)\b.*\b(M2|M\.2)\b')
+interface_nvme2 = re.compile(r'\bNVME\b')
+
+df['Form_Factor'] = df.apply(lambda row: '2.5 SATA' if (row.isna().all and (interface_sata.search(str(row.Titulo_Publicacion)))) else row.Form_Factor, axis=1)
+df['Form_Factor'] = df.apply(lambda row: '3.5 SATA' if (row.isna().all and (interface_sata2.search(str(row.Titulo_Publicacion)))) else row.Form_Factor, axis=1)
+df['Form_Factor'] = df.apply(lambda row: 'M.2 SATA' if (row.isna().all and interface_m2.search(str(row.Titulo_Publicacion))) else row.Form_Factor, axis=1)
+df['Form_Factor'] = df.apply(lambda row: 'M.2 NVMe' if (row.isna().all and interface_nvme.search(str(row.Titulo_Publicacion))) else row.Form_Factor, axis=1)
+df['Form_Factor'] = df.apply(lambda row: 'M.2 NVMe' if (row.isna().all and interface_nvme2.search(str(row.Titulo_Publicacion))) else row.Form_Factor, axis=1)
+
+print('Got Interface...')
+
+# Sort Columns
+
+df = df[['Country', 'Categoria_Nivel_1', 'Categoria_Nivel_2', 'Categoria_Nivel_3','Categoria_Nivel_4', 'Categoria_Nivel_5', 'Categoria_Nivel_6',
+         'Categoria_Nivel_7', 'Codigo_Categoria_Nivel1','Codigo_Categoria_Nivel2', 'Codigo_Categoria_Nivel3','Codigo_Categoria_Nivel4', 'Codigo_Categoria_Nivel5',
+         'Codigo_Categoria_Nivel6', 'Codigo_Categoria_Nivel7','Categoria_Completa', 'Codigo_de_Publicacion', 'Sitio',
+         'Titulo_Publicacion', 'Product_Category', 'Model', 'Capacity', 'Form_Factor','Codigo_Vendedor', 'Nickname_Vendedor','Categoria_del_Vendedor', 'Vendedor_No_Profesional',
+         'Vendedor_Profesional', 'PrecioMonedaLocal', 'PrecioUsd', 'Precio_Original', 'Moneda', 'Unidades_Vendidas', 'Monto_Vendido_Moneda_Local', 'Monto_Vendido_USD', 'Tasa_de_conversion',
+         'Tipo_de_Exposicion', 'Foto_Publicacion', 'Link_a_Publicacion','Esta_en_Oferta', 'Nuevo', 'Usado', 'Estado', 'Ofrece_MercadoPago','Provincia', 'Ciudad', 'Codigo_Tienda_Oficial', 
+         'Nombre_Tienda_Oficial','Ofrece_Envio_Gratis', 'Ofrece_MercadoEnvios', 'Mes', 'Marca']]
+
+print('Sorting columns...')
+
+d_path1 = 'C:'
+d_path2 = r'FILEPATH'
+d_path3 = 'Consolidated '+ month + '-2020.xlsx'
+
+d_name = os.path.join(d_path1, d_path2, month, d_path3)
+
+writer = pd.ExcelWriter(d_name, engine='xlsxwriter')
+df.to_excel(writer, sheet_name='Sheet1', startrow=0, header=True, index=False)
+writer.save()
