@@ -26,7 +26,7 @@ class FileTransfer:
         os.rename(start_two_file, end_two_file)
 
     def create_product1_file(self):
-        # Gets the latest downloaded Weekly File
+        # Gets the latest downloaded Weekly File for Product 1
         product1_list_of_files = glob.glob(r'PRODUCT1_FILE_*.xlsx')
         filename = max(product1_list_of_files, key = os.path.getctime)
         print(filename)
@@ -43,7 +43,7 @@ class FileTransfer:
         writer.save()
 
     def create_product2_file(self):
-        # Gets the latest NPD SSD Weekly File
+        # Gets the latest downloaded Weekly File for Product 2
         product2_list_of_files = glob.glob(r'PRODUCT2_FILE_*.xlsx')
         originalfile = max(product2_list_of_files, key = os.path.getctime)
         print(originalfile)
