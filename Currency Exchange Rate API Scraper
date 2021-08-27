@@ -1,0 +1,91 @@
+import requests
+from pprint import pprint
+import json
+import pandas as pd
+import cx_Oracle as cxo
+from datetime import datetime, timedelta
+import sqlalchemy as sa
+from sqlalchemy import types
+
+# Grabbing Needed Currency Symbols
+connection = cxo.connect(“<ORACLE CONNECTION>”)
+oracle_db = sa.create_engine('oracle+cx_oracle://<ORACLE SQL SERVER>/?service_name=<DATABASE NAME>')
+connection2 = oracle_db.connect()
+
+cursor = connection.cursor()
+
+# Delete any exchange rates from the future and duplicates
+cursor.execute('delete from fx_rates where valid_from > SYSDATE')
+connection.commit()
+
+cursor.execute('call clean_fx_rates_dupl()')
+connection.commit()
+
+# Retrieves data to see which currencies are needed
+df_lw_cl = pd.read_sql("select distinct currency from <TABLE NAME> where currency is not null and currency not in ('USD')", con=connection)
+
+df_ls_cl = pd.read_sql("select distinct currency from <TABLE NAME> where currency is not null and currency not in ('USD')", con=connection)
+
+df_cpt_cl = pd.read_sql("SELECT DISTINCT PRICE_CURRENCY AS CURRENCY FROM <TABLE NAME> WHERE PRICE_CURRENCY IS NOT NULL AND PRICE_CURRENCY NOT IN ('USD')", con=connection)
+
+lw_cl = df_lw_cl['CURRENCY'].tolist()
+ls_cl = df_ls_cl['CURRENCY'].tolist()
+cpt_cl = df_cpt_cl['CURRENCY'].tolist()
+
+CurList = list(set(lw_cl + ls_cl + cpt_cl))
+
+# Grabs Needed days
+dfmd = pd.read_sql('select max(valid_from) as maxD from fx_rates', con=connection)
+
+FirstDay = dfmd['MAXD'].iloc[0]
+LastDay = datetime(datetime.now().year,datetime.now().month,(datetime.now()-timedelta(days=1)).day,23,58)
+
+DateList = [LastDay - timedelta(days=x) for x in range((LastDay - FirstDay).days)]
+print(DateList)
+
+# Cleans the data and makes it into the dataframe
+def get_rates_data():
+   data = []
+   date = req['date']
+   date_obj = datetime.strptime(date, '%Y-%m-%d')
+
+   for country in CurList:
+       curr = req['rates'][country]
+       data.append(curr)
+
+   df = pd.DataFrame(list(zip(CurList, data)), columns=['TO_CURRENCY', 'RATE'])
+   df['VALID_FROM'] = date_obj
+   df['RATE_TYPE'] = 'PYTHON_FIXER'
+   df['FROM_CURRENCY'] = 'USD'
+   df = df[['RATE_TYPE', 'FROM_CURRENCY', 'TO_CURRENCY', 'VALID_FROM', 'RATE']]
+   dtyp = {c: types.VARCHAR(df[c].str.len().max()) for c in df.columns[df.dtypes == 'object'].tolist()}
+
+   df.to_sql('FX_RATES', connection2, schema=<SQL DATABASE NAME>, if_exists='append', index=False, dtype=dtyp)
+   print('Sent ' + date + ' data to Table: FX_RATES')
+
+# Grabs data from API and sends to SQL
+api_key = <API KEY NUMBER>
+
+yesterday = datetime.today() - timedelta(days=1)
+yest_date = yesterday.date()
+
+if len(DateList) == 0:
+   response = requests.get('http://data.fixer.io/api/' + str(yest_date) + '?access_key=' + api_key + '&base=USD')
+   req = response.json()
+
+   get_rates_data()
+
+if len(DateList) > 0:
+   for x in DateList:
+       response = requests.get('http://data.fixer.io/api/' + str(x.date()) + '?access_key=' + api_key + '&base=USD')
+       req = response.json()
+
+       get_rates_data()
+
+cursor.execute('call clean_fx_rates_dupl()')
+connection.commit()
+
+cursor.execute('delete from fx_rates where valid_from > SYSDATE + 1')
+connection.commit()
+
+connection.close()
