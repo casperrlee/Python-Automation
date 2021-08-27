@@ -1,0 +1,111 @@
+import pandas as pd
+from pandas import ExcelWriter
+import numpy as np
+from datetime import date
+from datetime import datetime
+import time
+import random
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.chrome.options import Options
+import sqlalchemy as sa
+from sqlalchemy import types
+import cx_Oracle as cxo
+import os
+import re
+from openpyxl import load_workbook
+import glob
+
+options = webdriver.ChromeOptions()
+options.add_argument('user-data-dir=C:\\Users\\AppData\\Local\\Google\\Chrome\\User Data Test')
+options.add_argument('--profile-directory=Default')
+options.add_argument('--disable-popup-blocking')
+options.add_argument('--no-sandbox')
+options.add_argument('--remote-debugging-port=9222')
+options.add_argument('--disable-dev-shm-using')
+
+browser = webdriver.Chrome(r'C:\Program Files (x86)\chromedriver.exe', options=options)
+
+time.sleep(1)
+
+# Opens browser to XCH historical data
+
+browser.get('https://coinmarketcap.com/currencies/chia-network/historical-data/')
+browser.maximize_window()
+
+time.sleep(5)
+
+date_list = []
+open_pr_list = []
+high_list = []
+low_list = []
+close_list = []
+
+master_list = [open_pr_list, high_list, low_list, close_list]
+
+for x in range(len(browser.find_elements_by_xpath("//table/tbody/tr"))):
+   data = browser.find_elements_by_xpath("//table/tbody/tr")[x].text
+
+   splitter = data.split()
+   date = splitter[0]+" "+splitter[1]+" "+splitter[2]
+   date_formatted = datetime.strptime(date, '%b %d, %Y').strftime('%Y-%m-%d')
+   date_formatted2 = datetime.strptime(date_formatted, "%Y-%m-%d")
+   date_list.append(date_formatted2)
+  
+   open_pr = splitter[3]
+   open_pr_list.append(open_pr)
+  
+   high = splitter[4]
+   high_list.append(high)
+  
+   low = splitter[5]
+   low_list.append(low)
+  
+   close = splitter[6]
+   close_list.append(close)
+
+# Moves all scraped data into dataframe
+
+chia_tracker = pd.DataFrame({'MARKET_DATE':date_list,
+'OPEN_PRICE':open_pr_list,
+'HIGH_PRICE':high_list,
+'LOW_PRICE':low_list,
+'CLOSING_PRICE':close_list})
+chia_tracker['OPEN_PRICE'] = chia_tracker['OPEN_PRICE'].str.replace(',', '').str.replace('$', '').astype(float)
+chia_tracker['HIGH_PRICE'] = chia_tracker['HIGH_PRICE'].str.replace(',', '').str.replace('$', '').astype(float)
+chia_tracker['LOW_PRICE'] = chia_tracker['LOW_PRICE'].str.replace(',', '').str.replace('$', '').astype(float)
+chia_tracker['CLOSING_PRICE'] = chia_tracker['CLOSING_PRICE'].str.replace(',', '').str.replace('$', '').astype(float)
+
+last_date = chia_tracker['MARKET_DATE'].iloc[-1].date()
+
+oracle_db = sa.create_engine('oracle+cx_oracle://<ORACLE SQL SERVER>/?service_name=<DATABASE NAME>')
+connection = cxo.connect("<SQL SERVER/CREDENTIALS>")
+connection2 = oracle_db.connect()
+cursor = connection.cursor()
+
+sql_command1 = "SELECT * FROM XCH_PRICE_TRACKER WHERE MARKET_DATE >= TO_DATE('"
+sql_command2 = "', 'YYYY/MM/DD') ORDER BY MARKET_DATE DESC"
+sql_files_dates = sql_command1 + str(last_date) + sql_command2
+
+df_files_dates = pd.read_sql(sql_files_dates, con=connection)
+
+df_files_dates['MARKET_DATE'] = df_files_dates['MARKET_DATE'].dt.strftime('%Y-%m-%d %H:%M:%S')
+df_files_dates['MARKET_DATE'] = pd.to_datetime(df_files_dates['MARKET_DATE'])
+
+df_diff = pd.concat([chia_tracker, df_files_dates]).drop_duplicates(keep=False)
+
+connection3 = oracle_db.connect()
+
+dtyp = {c:types.VARCHAR(df_diff[c].str.len().max()) for c in df_diff.columns[df_diff.dtypes == 'object'].tolist()}
+df_diff.to_sql('XCH_PRICE_TRACKER', connection3, schema='<SQL DATABASE>', if_exists='append', index=False)
+
+for x in range(len(df_diff)):
+   print('Sent ' + str(df_diff['MARKET_DATE'][x]) + ' to SQL.')
+   print('')
+
+browser.quit()
