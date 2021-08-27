@@ -1,4 +1,4 @@
-# Python-Automation
+# Automation projects with Python
 
 All of these are examples of processes that were automated using python.
 
