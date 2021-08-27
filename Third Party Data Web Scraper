@@ -1,0 +1,425 @@
+import pandas as pd
+import numpy as np
+from datetime import date  
+from datetime import datetime
+import time
+import random
+from selenium import webdriver 
+from selenium.webdriver.common.by import By 
+from selenium.webdriver.support.ui import WebDriverWait 
+from selenium.webdriver.support import expected_conditions as EC 
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.chrome.options import Options
+import os
+import re
+import pickle
+pd.set_option('display.max_columns', None)
+import pyotp
+import sqlalchemy as sa
+import cx_Oracle as cxo
+import glob
+from sqlalchemy import types
+
+options = webdriver.ChromeOptions()
+options.add_argument("--no-sandbox")
+options.add_argument('--ignore-certificate-errors-spki-list')
+options.add_argument('--ignore-certificate-errors')
+options.add_argument('--ignore-ssl-errors')
+# options.add_argument("headless")
+# options.add_argument('--disable-dev-shm-usage')
+# options.add_argument('--disable-gpu')
+# options.binary_location = "D:\\ProgramData\\chrome-win\\chrome.exe"
+browser = webdriver.Chrome(r'C:\Program Files (x86)\chromedriver.exe', options=options)
+
+browser.get("<THIRD-PARTY-DATA WEBSITE>")
+browser.maximize_window()
+time.sleep(1)
+
+# Automates 2-Factor Authentication
+def login():
+    username = browser.find_element_by_id("ap_email")
+    username.clear()
+    username.send_keys("<EMAIL>")
+
+    password = browser.find_element_by_id("ap_password")
+    password.clear()
+    password.send_keys("<PASSWORD>")
+
+    browser.find_element_by_id("signInSubmit").click()
+
+    #when prompted select otp method
+    time.sleep(4)
+    try: # before opt
+        browser.find_elements_by_class_name('a-radio-label')[0].click()
+        time.sleep(2)
+        browser.find_elements_by_id('auth-send-code')[0].click()
+    except:
+        pass
+    time.sleep(2)
+
+    otp = browser.find_element_by_id("auth-mfa-otpcode")
+    otp.clear()
+    totp = pyotp.TOTP('<OTPCODE KEY>')
+    opt = totp.now()
+    print(opt)
+    otp.send_keys(opt)
+    browser.find_element_by_id('auth-signin-button').click()
+    time.sleep(3) 
+
+    #sometimes need users to login twice 
+    try:
+        browser.find_elements_by_class_name('a-radio-label')[0].click()
+        time.sleep(2)
+    #     browser.find_elements_by_class('vendor-group-switch-action-buttons')[-1].click()
+        browser.find_elements_by_xpath('//input[@aria-labelledby="vendor-group-switch-confirm-button-announce"]')[0].click()
+    except:
+        pass
+    time.sleep(2)
+    
+    #some times need users to login twice 
+    browser.refresh()
+    
+login()
+
+oracle_db = sa.create_engine('oracle+cx_oracle://<ORACLE SQL SERVER>/?service_name=<DATABASE NAME>')
+connection = cxo.connect("<SQL SERVER/CREDENTIALS>")
+connection2 = oracle_db.connect()
+cursor = connection.cursor()
+
+def click_download_button(attemp=10):
+    time.sleep(5)
+    try:
+        browser.find_element_by_id('downloadButton').click()
+    except:
+        time.sleep(3)
+        click_download_button()
+
+def download_inventory_health_report(attemp=10):
+    time.sleep(5)
+    Try:
+browser.find_element_by_xpath("//li[@data-testid='inventoryHealthDetail_csv']).click()
+    except:
+        time.sleep(3)
+        download_inventory_health_report()
+
+def click_apply_button():
+    apply_btn = browser.find_elements_by_xpath("//*[contains(text(), 'Apply')]")
+    if len(apply_btn) == 2:
+        apply_btn[1].click()
+    else: 
+        pass
+    
+def change_date_and_download(day, flag=None, count=None):
+    time.sleep(1)
+    print(day)
+    #change date
+    if (flag == 'cross') & (count==1):
+        #go to left
+        time.sleep(1)
+        browser.find_element_by_class_name('date-picker-input').click()
+        time.sleep(0.5)
+        browser.find_elements_by_class_name('react-datepicker__navigation--previous')[0].click()
+    else:
+        browser.find_element_by_class_name('date-picker-input').click()
+
+    #du_num is the first date in calendar of the month
+    du_num = int(browser.find_elements_by_xpath("//div[@class='react-datepicker__month-container']/div[2]/div[1]/div[1]")[0].text)
+
+    # get last day of previous month 
+    du_max = max([int(x.text) for x in browser.find_elements_by_class_name('react-datepicker__day')[0:7]])
+
+    if (day >= du_num) and (du_num!=1) and (day<=du_max): #also <= last day of last month
+        browser.find_elements_by_xpath("//div[@ aria-label='day-"+str(day)+"']")[1].click()
+        time.sleep(1)
+        if (flag == 'cross') & (count==1):
+            #click on the left arrow
+            browser.find_elements_by_class_name('react-datepicker__navigation--previous')[0].click()
+            try:
+                browser.find_elements_by_xpath("//div[@ aria-label='day-"+str(day)+"']")[1].click()
+            except: 
+                pass
+        else:
+            try:
+                browser.find_elements_by_xpath("//div[@ aria-label='day-"+str(day)+"']")[1].click()
+            except: 
+                pass
+    else:
+        browser.find_elements_by_xpath("//div[@ aria-label='day-"+str(day)+"']")[0].click()
+        time.sleep(1)
+        if (flag == 'cross') & (count==1):
+            #click on the left arrow
+            browser.find_elements_by_class_name('react-datepicker__navigation--previous')[0].click()
+            try: 
+                browser.find_elements_by_xpath("//div[@ aria-label='day-"+str(day)+"']")[0].click()
+            except: 
+                pass
+        else:
+            try: 
+                browser.find_elements_by_xpath("//div[@ aria-label='day-"+str(day)+"']")[0].click()
+            except: 
+                pass
+            
+    time.sleep(0.5)
+    
+    time.sleep(1)
+    click_apply_button()
+    
+    #download csv
+    time.sleep(1) 
+    click_download_button()
+    time.sleep(1)
+    download_inventory_health_report()
+    
+    #click on new date after last download completes
+    if len(browser.find_elements_by_xpath("//*[contains(text(), 'Download')]"))!=0:
+        time.sleep(2)
+    else: pass
+    
+    accept_alert()
+    
+    time.sleep(3)
+    
+def accept_alert():
+    try: 
+        #Switch the control to the Alert window
+        obj = browser.switch_to.alert
+        obj.accept()
+    except:
+        time.sleep(random.random()+0.5)
+        accept_alert()
+        
+def swtich_account(account_name):
+    browser.find_element_by_xpath("//*[contains(text(), 'Switch accounts')]").click()
+    time.sleep(3)
+    try:
+        browser.find_element_by_xpath("//*[contains(text(), '"+account_name+"')]").click() 
+    except:
+        time.sleep(5)
+        browser.find_element_by_xpath("//*[contains(text(), '"+account_name+"')]").click()
+    time.sleep(0.5)
+    browser.find_element_by_xpath("//input[@aria-labelledby='vendor-group-switch-confirm-button-announce']").click()
+    time.sleep(1)
+    browser.get("<THIRD-PARTY-DATA WEBSITE>")
+    time.sleep(2)
+
+def get_page_ready_for_daily(link):
+    browser.get(link)
+    time.sleep(5)
+    # Toggle to daily view
+    period = 'Weekly'
+    try:
+        period=browser.find_element_by_id('dashboard-filter-reportingRange').text.split(': ')[1]
+    except:
+        period=browser.find_element_by_xpath("//*[@data-reactid='.7.2']").text
+    if period != "Daily":
+        browser.find_element_by_xpath("//*[contains(text(), 'Reporting Range')]").click()
+        time.sleep(4)
+        browser.find_element_by_xpath("//li[@data-testid='DAILY']").click()
+#         browser.find_element_by_xpath("//div[@class='awsui-button-dropdown']/ul/li[1]/a").click()
+        click_apply_button()
+        time.sleep(4)
+    else: pass
+    time.sleep(0.5)    
+
+def get_last_day_in_month(year, month):
+    from calendar import monthrange
+    last_day = monthrange(year, month)[1]
+    return last_day
+
+def get_last_scraped_date(table, country):
+    query_latest_date= "SELECT max(REPORT_DATE) FROM "+table+" where ACCOUNT_NAME LIKE '"+country+"%'"
+    last_scrape = None
+    for row in cursor.execute(query_latest_date):
+        last_scrape = row[0]
+    return last_scrape
+
+def concat_files(file, country):
+    date_df = pd.read_csv(file)
+    date = date_df.columns[7]
+
+    file_date = re.search(r'(\d+/\d+/\d+)', date)
+    report_date = file_date.group(1)
+    
+    if country == 'GB':
+        date_time_obj = datetime.strptime(report_date, '%d/%m/%y')
+        changed_date = date_time_obj.date()
+    else:
+        date_time_obj = datetime.strptime(report_date, '%m/%d/%y')
+        changed_date = date_time_obj.date()
+
+
+    inventory = pd.read_csv(file, skiprows = 1)
+    now = datetime.now()
+    pull_day = datetime.strftime(now, '%m/%d/%Y')
+    inventory['REPORT_DATE'] = changed_date
+    inventory['ACCOUNT_NAME'] = country
+    inventory['UPDATED_AT'] = now
+
+
+
+    inventory = inventory[['REPORT_DATE', 'ACCOUNT_NAME', 'ASIN', 'Product Title', 'Net Received', 'Net Received Units',
+         'Sell-Through Rate', 'Open Purchase Order Quantity', 'Sellable On Hand Inventory',
+         'Sellable On Hand Inventory - Trailing 30-day Average', 'Sellable On Hand Units',
+         'Unsellable On Hand Inventory', 'Unsellable On Hand Inventory - Trailing 30-day Average',
+         'Unsellable On Hand Units', 'Aged 90+ Days Sellable Inventory',
+         'Aged 90+ Days Sellable Inventory - Trailing 30-day Average', 'Aged 90+ Days Sellable Units',
+         'Unhealthy Inventory', 'Unhealthy Inventory - Trailing 30-day Average', 'Unhealthy Units',
+         'Replenishment Category', 'UPDATED_AT']]
+
+    inventory.columns = ['REPORT_DATE', 'ACCOUNT_NAME', 'AMZ_ASIN', 'PRODUCT_TITLE', 'NET_RECEIVED',
+                         'NET_RECEIVED_UNITS', 'SELL_THROUGH_RATE', 'OP_ORDER_QTY', 'SELLABLE_OH_INV',
+                         'SELLABLE_OH_INV_30D_AVG',
+                         'SELLABLE_OH_UNITS', 'UNSELLABLE_OH_INV', 'UNSELLABLE_OH_INV_30D_AVG',
+                         'UNSELLABLE_OH_UNITS', 'AGED_90D_SELLABLE_INV', 'AGED_90D_SELLABLE_INV_30D_AVG',
+                         'AGED_90D_SELLABLE_UNITS',
+                         'UNHEALTHY_INV', 'UNHEALTHY_INV_30D_AVG', 'UNHEALTHY_UNITS', 'REPLENISHMENT_CATEGORY',
+                         'UPDATED_AT']
+
+    inventory['SELL_THROUGH_RATE'] = pd.to_numeric(inventory['SELL_THROUGH_RATE'], errors='coerce')
+
+    new_list = ['NET_RECEIVED', 'SELLABLE_OH_INV', 'SELLABLE_OH_INV_30D_AVG', 'UNSELLABLE_OH_INV',
+                'UNSELLABLE_OH_INV_30D_AVG',
+                'AGED_90D_SELLABLE_INV', 'AGED_90D_SELLABLE_INV_30D_AVG', 'UNHEALTHY_INV',
+                'UNHEALTHY_INV_30D_AVG']
+
+    new_list2 = ['NET_RECEIVED_UNITS', 'OP_ORDER_QTY', 'SELLABLE_OH_UNITS', 'UNSELLABLE_OH_UNITS',
+                 'AGED_90D_SELLABLE_UNITS', 'UNHEALTHY_UNITS']
+
+    for x in new_list:
+        inventory[x] = inventory[x].str.replace(',', '')
+        inventory[x] = inventory[x].str.replace('€', '')
+        inventory[x] = inventory[x].str.replace('£', '')
+        inventory[x] = inventory[x].astype(float)
+
+    for x in new_list2:
+        inventory[x] = inventory[x].apply(str).str.replace(',', '')
+        inventory[x] = inventory[x].astype(int)
+
+
+    appended_data.append(inventory)
+
+    global combined_data
+    combined_data = pd.concat(appended_data)
+
+    combined_data['REPORT_DATE'] = pd.to_datetime(combined_data['REPORT_DATE'])
+
+    print('Added '+country+' '+str(changed_date)+' data to dataframe')
+        
+def send_to_sql():
+    dty = {c: types.VARCHAR(combined_data[c].str.len().max()) for c in combined_data.columns[combined_data.dtypes == 'object'].tolist()}
+
+    cols = combined_data.select_dtypes(include=[np.object]).columns
+    combined_data[cols] = combined_data[cols].apply(lambda x: x.str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8'))
+
+    oracle_db = sa.create_engine('oracle+cx_oracle://<ORACLE SQL SERVER>/?service_name=<DATABASE NAME>')
+    connection3 = oracle_db.connect()
+
+    combined_data.to_sql('AVC_DAILY_INV_HEALTH_EU', connection3, schema='<DATABASE NAME>', if_exists='append', index=False, dtype=dty)
+    connection3.close()
+    
+    print('Sent data to SQL')
+
+action = webdriver.ActionChains(browser)
+
+element = WebDriverWait(browser, 30).until(EC.presence_of_element_located((By.ID, 'vss_navbar_tab_reports_text')))
+action.move_to_element(element)
+action.perform()
+
+reports = WebDriverWait(browser, 10).until(EC.element_to_be_clickable((By.ID, 'ARAP_I90_Amazon_Retail_Analytics_text')))
+reports.click()
+
+# WebDriverWait(browser, 10).until(EC.element_to_be_clickable((By.XPATH, '//a[@href="/analytics/dashboard/inventoryHealth"]'))).click()
+
+time.sleep(5)
+
+get_page_ready_for_daily("<THIRD-PARTY-DATA WEBSITE>")
+
+countries = ['DE', 'ES', 'FR', 'GB', 'IT']
+
+for country in countries:
+    latest_date = browser.find_elements_by_class_name('date-picker-input')[0].get_attribute('value')
+
+    latest_date=str(datetime.strptime(latest_date,'%m/%d/%y').date())
+
+    latest_day = int(latest_date.split('-')[-1])
+
+    last_scrape = get_last_scraped_date('<TABLE NAME>', country)
+    last_scrape = last_scrape.strftime('%Y-%m-%d')
+    print(last_scrape)
+
+    last_scraped_year = int(last_scrape.split('-')[0])
+    last_scraped_month = int(last_scrape.split('-')[1])
+    last_day_of_last_month = get_last_day_in_month(last_scraped_year,last_scraped_month)
+
+    #determine if start date is this month, if not click left row and start from last month
+    start_day = int(last_scrape.split('-')[2])
+    if start_day == last_day_of_last_month:
+        start_day = 1
+    else:
+        start_day=start_day+1
+
+    start_date = last_scrape
+    end_day = latest_day
+    
+    print('country: ', country)
+    print('last scraped date: ',last_scrape)
+    print('last scraped month: ',last_scraped_month)
+    print('last_day_of_last_scraped_month: ',last_day_of_last_month)
+    print('latest available date is: ', latest_date)
+    print('latest available day is: ', latest_day)
+    print('start_day:', start_day)
+    print('end_day:', end_day)
+    print('')
+
+account_list = ['DE - Western Digital (UK) Limited (FCA Account)', 'ES - Western Digital (UK) Limited (FCA Account)',
+               'FR - Western Digital (UK) Limited (FCA Account)', 'GB - Western Digital (UK) Limited (FCA Account)',
+               'IT - Western Digital (UK) Limited (FCA Account)']
+
+
+for account_name in account_list:
+    swtich_account(account_name)
+    print('-------')
+    print('scraping', account_name)
+    # AUTO Download
+    get_page_ready_for_daily("<THIRD-PARTY-DATA WEBSITE>")
+    
+    if start_day>end_day: ## cross month
+        #last month
+        count = 1
+        for day in list(range(start_day,last_day_of_last_month+1)):
+            change_date_and_download(day,'cross', count)
+            count += 1
+        #this month 
+        #move calender to this month
+        browser.refresh()
+        time.sleep(5)
+        get_page_ready_for_daily("<THIRD-PARTY-DATA WEBSITE>")
+        for day in list(range(1,end_day+1)):
+            change_date_and_download(day)
+            
+    else: ## within month
+        for day in list(range(start_day,end_day+1)):
+            try:
+                change_date_and_download(day)
+            except:
+                change_date_and_download(day)
+
+    time.sleep(3)
+
+import glob
+from datetime import datetime
+
+appended_data = []
+
+for country in countries:
+    today = datetime.today()
+    today2 = str(today.date())
+    inventory_file = glob.glob(r'C:\Users\Downloads\Inventory Health_'+country+' - '+today2+'*.csv')
+
+    for file in inventory_file:
+        concat_files(file, country)
+    print('')
+
+send_to_sql()
+
+browser.quit()
